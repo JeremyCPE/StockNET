@@ -1,18 +1,17 @@
 ﻿namespace StockNET.Models
 {
+
     public class Evaluation
     {
-        public string Type { get; set; }
-        public int Value { get; set; }
+        public double Score { get; private set; }
+        public List<IMove> Moves { get; } = new List<IMove>();
 
-        public Evaluation()
+        public void AddMove(IMove move)
         {
+            Moves.Add(move);
+            Score = BestMove.Centipawn; // Get the highest centipawn value
         }
 
-        public Evaluation(string type, int value)
-        {
-            Type = type;
-            Value = value;
-        }
+        public IMove BestMove => Moves.OrderByDescending(x => x.Centipawn).First();
     }
 }

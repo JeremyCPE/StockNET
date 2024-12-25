@@ -70,8 +70,39 @@ namespace StockNET.Core
             }
             return _process.StandardOutput.ReadLine();
         }
+
         /// <summary>
-        /// Start stockfish process
+        /// Read all lines from Stockfish process until bestmove command
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="NullReferenceException"></exception>
+        public IEnumerable<string> ReadAllLines()
+        {
+            if (_process.StandardInput == null)
+            {
+                throw new NullReferenceException();
+            }
+            while (true)
+            {
+                string? line = _process.StandardOutput.ReadLine();
+                if (line == null)
+                {
+                    yield break;
+                }
+
+                yield return line;
+
+                if (line.Contains("bestmove", StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return line;
+                    yield break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Start stock
+        /// fish process
         /// </summary>
         public void Start()
         {

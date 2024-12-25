@@ -1,6 +1,5 @@
 ﻿using StockNET.Exceptions;
 using StockNET.Models;
-using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace StockNET.Core
@@ -41,6 +40,8 @@ namespace StockNET.Core
         /// 
         /// </summary>
         public int Depth { get; set; }
+
+        public int DepthEval { get; set; } = 20;
 
         /// <summary>
         /// 
@@ -150,7 +151,7 @@ namespace StockNET.Core
         /// </summary>
         /// <param name="moves"></param>
         /// <returns></returns>
-        private string movesToString(string[] moves)
+        private string MovesToString(string[] moves)
         {
             return string.Join(" ", moves);
         }
@@ -166,23 +167,6 @@ namespace StockNET.Core
             {
                 throw new ApplicationException();
             }
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        private void Go()
-        {
-            Send($"go depth {Depth}");
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="time"></param>
-        private void GoTime(int time)
-        {
-            Send($"go movetime {time}", estimatedTime: time + 100);
         }
 
         /// <summary>
@@ -206,7 +190,7 @@ namespace StockNET.Core
         public void SetPosition(params string[] moves)
         {
             StartNewGame();
-            Send($"position startpos moves {movesToString(moves)}");
+            Send($"position startpos moves {MovesToString(moves)}");
         }
 
         /// <summary>
@@ -277,97 +261,18 @@ namespace StockNET.Core
         }
 
         /// <summary>
-        /// Getting best move of current position
+        /// Getting best move of current position or none if there is no move
         /// </summary>
         /// <returns></returns>
         /// <exception cref="MaxTriesException"></exception>
-        public string GetBestMove()
+        public string GetNextBestMove()
         {
-            Go();
-            int tries = 0;
-            while (true)
+            string? nextMove = GetEvaluation(1).BestMove.TopNextMoves;
+            if (nextMove is null)
             {
-                if (tries > MAX_TRIES)
-                {
-                    throw new MaxTriesException();
-                }
-
-                List<string> data = ReadLineAsList();
-
-                if (data[0] == "bestmove")
-                {
-                    if (data[1] == "(none)")
-                    {
-                        return null;
-                    }
-
-                    return data[1];
-                }
-
-                tries++;
+                return "none";
             }
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="time"></param>
-        /// <returns></returns>
-        /// <exception cref="MaxTriesException"></exception>
-        public string GetBestMoveTime(int time = 1000)
-        {
-            GoTime(time);
-            int tries = 0;
-            while (true)
-            {
-                if (tries > MAX_TRIES)
-                {
-                    throw new MaxTriesException();
-                }
-
-                List<string> data = ReadLineAsList();
-                if (data[0] == "bestmove")
-                {
-                    if (data[1] == "(none)")
-                    {
-                        return null;
-                    }
-
-                    return data[1];
-                }
-            }
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="moveValue"></param>
-        /// <returns></returns>
-        /// <exception cref="MaxTriesException"></exception>
-        public bool IsMoveCorrect(string moveValue)
-        {
-            Send($"go depth 1 searchmoves {moveValue}");
-            int tries = 0;
-            while (true)
-            {
-                if (tries > MAX_TRIES)
-                {
-                    throw new MaxTriesException();
-                }
-
-                List<string> data = ReadLineAsList();
-                if (data[0] == "bestmove")
-                {
-                    if (data[1] == "(none)")
-                    {
-                        return false;
-                    }
-
-                    return true;
-                }
-
-                tries++;
-            }
+            return nextMove.Split(' ').First();
         }
 
         /// <summary>
@@ -375,33 +280,38 @@ namespace StockNET.Core
         /// </summary>
         /// <returns></returns>
         /// <exception cref="MaxTriesException"></exception>
-        public double GetEvaluation()
+        public Evaluation GetEvaluation(int depth = 20)
         {
-            Send($"eval");
-            while (true)
+            Send($"go depth {depth}");
+            string evaluationPattern = @"multipv (\d+) score (\w+) (-?\d+).*?pv (.+)";
+            Evaluation eval = new();
+            IEnumerable<string> lines = _stockfish.ReadAllLines();
+            foreach (string? line in lines.Where(d => d.Contains($"info depth {depth}")))
             {
-                string? data = _stockfish?.ReadLine();
-                if (data == null)
+                if (Regex.IsMatch(line, evaluationPattern))
                 {
-                    throw new MaxTriesException();
-                }
-                if (data.Contains("Final evaluation"))
-                {
-                    Regex regex = new(@"-?\d+(\.\d+)?");
-                    Match match = regex.Match(data);
+                    Match match = Regex.Match(line, evaluationPattern);
+                    int rank = int.Parse(match.Groups[1].Value);
+                    string type = match.Groups[2].Value;
+                    int cpOrMateInMoves = int.Parse(match.Groups[3].Value);
+                    string moves = match.Groups[4].Value;
 
-                    if (match.Success)
+                    if (type == "mate")
                     {
-                        if (double.TryParse(match.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double number))
-                        {
-                            return number;
-                        }
+                        eval.AddMove(new MateMove(moves, cpOrMateInMoves));
                     }
-                    // Failed to parse number
-                    return 0;
+                    else
+                    {
+                        eval.AddMove(new CentipawnMove(moves, cpOrMateInMoves));
+                    }
                 }
             }
+            if (eval.Moves.Count == 0)
+                eval.AddMove(new DrawMove());
+            return eval;
+
         }
-        #endregion
     }
+    #endregion
 }
+

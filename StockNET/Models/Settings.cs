@@ -12,7 +12,7 @@
         public Settings(
             int threads = 0,
             bool ponder = false,
-            int multiPV = 1,
+            int multiPV = 3,
             int skillLevel = 20,
             int moveOverhead = 30,
             bool uciChess960 = false
